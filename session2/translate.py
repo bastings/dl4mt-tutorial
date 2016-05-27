@@ -5,6 +5,7 @@ import argparse
 
 import numpy
 import cPickle as pkl
+import theano
 
 from nmt import (build_sampler, gen_sample, load_params,
                  init_params, init_tparams)
@@ -140,8 +141,8 @@ def main(model, dictionary, dictionary_target, source_file, saveto, k=5,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-k', type=int, default=5)
-    parser.add_argument('-p', type=int, default=5)
+    parser.add_argument('-k', type=int, default=12)
+    parser.add_argument('-p', type=int, default=12)
     parser.add_argument('-n', action="store_true", default=False)
     parser.add_argument('-c', action="store_true", default=False)
     parser.add_argument('model', type=str)

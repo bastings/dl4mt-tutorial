@@ -14,6 +14,7 @@ import os
 import warnings
 import sys
 import time
+import math
 
 from collections import OrderedDict
 
@@ -842,9 +843,12 @@ def gen_sample(tparams, f_init, f_next, x, options, trng=None, k=1, maxlen=30,
 
 # calculate the log probablities on a given corpus using translation model
 def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True):
+
     probs = []
+    probs_mean = []
 
     n_done = 0
+    num_val_words = 0  # total number of words
 
     for x, y in iterator:
         n_done += len(x)
@@ -853,9 +857,13 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True):
                                             n_words_src=options['n_words_src'],
                                             n_words=options['n_words'])
 
+        num_val_words += sum(sum(y_mask))
+
         pprobs = f_log_probs(x, x_mask, y, y_mask)
-        for pp in pprobs:
+        lengths = y_mask.sum(0)
+        for pp, length in zip(pprobs, lengths):
             probs.append(pp)
+            probs_mean.append(pp / length)
 
         if numpy.isnan(numpy.mean(probs)):
             ipdb.set_trace()
@@ -863,7 +871,9 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True):
         if verbose:
             print >>sys.stderr, '%d samples computed' % (n_done)
 
-    return numpy.array(probs)
+    loss = numpy.array(probs)
+    perplexity = numpy.exp(loss.sum() / num_val_words)
+    return loss, perplexity
 
 
 # optimizers
@@ -876,24 +886,30 @@ def adam(lr, tparams, grads, inp, cost):
 
     f_grad_shared = theano.function(inp, cost, updates=gsup, profile=profile)
 
-    lr0 = 0.0001
-    b1 = 0.9
+    # lr0 = 0.0002
+    # b1 = 0.1
+    # b2 = 0.001
+
+    lr0 = 0.001
+    b1 = 0.1
     b2 = 0.999
     e = 1e-8
+
+    print 'Adam using lr0=', lr0, ' beta1=', b1, ' beta2=', b2
 
     updates = []
 
     i = theano.shared(numpy.float32(0.))
     i_t = i + 1.
-    fix1 = 1. - b1**(i_t)
-    fix2 = 1. - b2**(i_t)
+    fix1 = 1. - b1**i_t
+    fix2 = 1. - b2**i_t
     lr_t = lr0 * (tensor.sqrt(fix2) / fix1)
 
     for p, g in zip(tparams.values(), gshared):
         m = theano.shared(p.get_value() * 0.)
         v = theano.shared(p.get_value() * 0.)
-        m_t = (b1 * g) + ((1. - b1) * m)
-        v_t = (b2 * tensor.sqr(g)) + ((1. - b2) * v)
+        m_t = (b1 * m) + ((1. - b1) * g)
+        v_t = (b2 * v) + ((1. - b2) * g**2)
         g_t = m_t / (tensor.sqrt(v_t) + e)
         p_t = p - (lr_t * g_t)
         updates.append((m, m_t))
@@ -1248,8 +1264,7 @@ def train(dim_word=100,  # word vector dimensionality
             # validate model on validation set and early stop if necessary
             if numpy.mod(uidx, validFreq) == 0:
                 use_noise.set_value(0.)
-                valid_errs = pred_probs(f_log_probs, prepare_data,
-                                        model_options, valid)
+                valid_errs, perplexity = pred_probs(f_log_probs, prepare_data, model_options, valid)
                 valid_err = valid_errs.mean()
                 history_errs.append(valid_err)
 
@@ -1267,7 +1282,7 @@ def train(dim_word=100,  # word vector dimensionality
                 if numpy.isnan(valid_err):
                     ipdb.set_trace()
 
-                print 'Valid ', valid_err
+                print 'Valid loss: ', valid_err, 'PPX:', perplexity
 
             # finish after this many updates
             if uidx >= finish_after:
@@ -1276,6 +1291,9 @@ def train(dim_word=100,  # word vector dimensionality
                 break
 
         print 'Seen %d samples' % n_samples
+
+        # validate after epoch
+        # ..
 
         if estop:
             break

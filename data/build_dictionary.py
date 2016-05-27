@@ -29,7 +29,7 @@ def main():
         for ii, ww in enumerate(sorted_words):
             worddict[ww] = ii+2
 
-        with open('%s.pkl'%filename, 'wb') as f:
+        with open('%s.py2.pkl'%filename, 'wb') as f:
             pkl.dump(worddict, f)
 
         print 'Done'
